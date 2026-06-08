@@ -1,0 +1,14 @@
+export default function PageHeader({ title, subtitle, children }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 className="font-display text-2xl font-bold tracking-wide text-white uppercase">{title}</h1>
+        <div className="flex items-center gap-3 mt-1">
+          <div className="h-px w-8 bg-[#C9A84C]" />
+          {subtitle && <p className="text-xs font-label text-[#C9A84C]/70 tracking-widest uppercase">{subtitle}</p>}
+        </div>
+      </div>
+      {children && <div className="flex items-center gap-2">{children}</div>}
+    </div>
+  );
+}
