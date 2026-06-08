@@ -1,0 +1,79 @@
+import { useState, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { classifyClient } from "@/lib/businessLogic";
+
+export default function ClientDialog({ open, onOpenChange, client }) {
+  const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (client) {
+      setForm({ name: client.name || "", phone: client.phone || "", email: client.email || "", notes: client.notes || "" });
+    } else {
+      setForm({ name: "", phone: "", email: "", notes: "" });
+    }
+  }, [client, open]);
+
+  const mutation = useMutation({
+    mutationFn: (data) => {
+      if (client) {
+        return base44.entities.Client.update(client.id, data);
+      }
+      return base44.entities.Client.create({
+        ...data,
+        status: "regular",
+        total_visits: 0,
+        total_spent: 0,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      onOpenChange(false);
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    mutation.mutate(form);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{client ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label>Nome *</Label>
+            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </div>
+          <div>
+            <Label>Telefone *</Label>
+            <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
+          </div>
+          <div>
+            <Label>Email</Label>
+            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </div>
+          <div>
+            <Label>Observações</Label>
+            <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
