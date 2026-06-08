@@ -1,0 +1,287 @@
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { formatCurrency } from "@/lib/businessLogic";
+import { format, addMinutes, parse, isWithinInterval } from "date-fns";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
+
+// Check if a new slot conflicts with existing appointments for the same barber
+function hasConflict(appointments, barberId, date, time, durationMins, excludeId = null) {
+  if (!barberId || !date || !time) return false;
+  const newStart = parse(`${date} ${time}`, "yyyy-MM-dd HH:mm", new Date());
+  const newEnd = addMinutes(newStart, durationMins || 30);
+
+  return appointments.some((a) => {
+    if (a.id === excludeId) return false;
+    if (a.barber_id !== barberId) return false;
+    if (a.date !== date) return false;
+    if (a.status === "cancelled") return false;
+
+    const aStart = parse(`${a.date} ${a.time}`, "yyyy-MM-dd HH:mm", new Date());
+    const aEnd = addMinutes(aStart, a.duration || 30);
+
+    // Overlap check
+    return newStart < aEnd && newEnd > aStart;
+  });
+}
+
+export default function AppointmentDialog({ open, onOpenChange, defaultSlot, editAppointment }) {
+  const isEdit = !!editAppointment;
+
+  const [form, setForm] = useState({
+    client_id: "",
+    barber_id: "",
+    service_id: "",
+    date: "",
+    time: "",
+    coupon_code: "",
+    notes: "",
+  });
+
+  const queryClient = useQueryClient();
+
+  const { data: clients = [] } = useQuery({ queryKey: ["clients"], queryFn: () => base44.entities.Client.list() });
+  const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: () => base44.entities.Service.list() });
+  const { data: coupons = [] } = useQuery({ queryKey: ["coupons"], queryFn: () => base44.entities.Coupon.list() });
+  const { data: barbers = [] } = useQuery({ queryKey: ["barbers"], queryFn: () => base44.entities.Barber.list() });
+  const { data: appointments = [] } = useQuery({ queryKey: ["appointments"], queryFn: () => base44.entities.Appointment.list() });
+
+  useEffect(() => {
+    if (!open) return;
+    if (isEdit && editAppointment) {
+      const svc = services.find((s) => s.name === editAppointment.service_name);
+      setForm({
+        client_id: editAppointment.client_id || "",
+        barber_id: editAppointment.barber_id || "",
+        service_id: svc?.id || "",
+        date: editAppointment.date || "",
+        time: editAppointment.time || "",
+        coupon_code: editAppointment.coupon_code || "",
+        notes: editAppointment.notes || "",
+      });
+    } else if (defaultSlot) {
+      setForm((f) => ({ ...f, date: defaultSlot.date, time: defaultSlot.time, client_id: "", barber_id: "", service_id: "", coupon_code: "", notes: "" }));
+    } else {
+      setForm({ client_id: "", barber_id: "", service_id: "", date: "", time: "", coupon_code: "", notes: "" });
+    }
+  }, [open, editAppointment, defaultSlot]);
+
+  const selectedService = services.find((s) => s.id === form.service_id);
+  const selectedClient = clients.find((c) => c.id === form.client_id);
+  const selectedBarber = barbers.find((b) => b.id === form.barber_id);
+  const selectedCoupon = coupons.find(
+    (c) => c.code === form.coupon_code && c.active && (c.times_used || 0) < (c.usage_limit || 9999)
+  );
+
+  let discount = 0;
+  let finalPrice = selectedService?.price || 0;
+  if (selectedCoupon && selectedService) {
+    if (selectedCoupon.discount_type === "percentage") {
+      discount = (selectedService.price * selectedCoupon.discount_value) / 100;
+    } else {
+      discount = selectedCoupon.discount_value;
+    }
+    finalPrice = Math.max(0, selectedService.price - discount);
+  }
+
+  const conflict = hasConflict(
+    appointments,
+    form.barber_id,
+    form.date,
+    form.time,
+    selectedService?.duration,
+    isEdit ? editAppointment?.id : null
+  );
+
+  const saveMutation = useMutation({
+    mutationFn: async (data) => {
+      if (isEdit) {
+        await base44.entities.Appointment.update(editAppointment.id, data);
+      } else {
+        const created = await base44.entities.Appointment.create(data);
+        // Send confirmation email
+        if (selectedClient?.email) {
+          await base44.integrations.Core.SendEmail({
+            to: selectedClient.email,
+            subject: "✅ Agendamento Confirmado — Los Chicanos Barbershop",
+            body: `Olá, ${selectedClient.name}!\n\nSeu agendamento foi confirmado com sucesso.\n\n📅 Data: ${data.date}\n⏰ Horário: ${data.time}\n💇 Serviço: ${data.service_name}\n${selectedBarber ? `✂️ Barbeiro: ${selectedBarber.name}\n` : ""}💰 Total: R$ ${finalPrice.toFixed(2)}\n\nAté lá! — Equipe Los Chicanos Barbershop`,
+          }).catch(() => {}); // fail silently if email fails
+        }
+        if (selectedCoupon) {
+          await base44.entities.Coupon.update(selectedCoupon.id, {
+            times_used: (selectedCoupon.times_used || 0) + 1,
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["coupons"] });
+      onOpenChange(false);
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (conflict) return;
+    saveMutation.mutate({
+      client_id: form.client_id,
+      client_name: selectedClient?.name || "",
+      barber_id: form.barber_id || "",
+      barber_name: selectedBarber?.name || "",
+      service_name: selectedService?.name || "",
+      price: selectedService?.price || 0,
+      date: form.date,
+      time: form.time,
+      duration: selectedService?.duration || 30,
+      status: isEdit ? editAppointment.status : "scheduled",
+      coupon_code: form.coupon_code || "",
+      discount,
+      final_price: finalPrice,
+      notes: form.notes || "",
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Client */}
+          <div>
+            <Label>Cliente *</Label>
+            <Select value={form.client_id} onValueChange={(v) => setForm({ ...form, client_id: v })}>
+              <SelectTrigger><SelectValue placeholder="Selecione o cliente" /></SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Barber */}
+          <div>
+            <Label>Barbeiro</Label>
+            <Select value={form.barber_id} onValueChange={(v) => setForm({ ...form, barber_id: v })}>
+              <SelectTrigger><SelectValue placeholder="Qualquer barbeiro" /></SelectTrigger>
+              <SelectContent>
+                {barbers.filter((b) => b.active !== false).map((b) => (
+                  <SelectItem key={b.id} value={b.id}>{b.name}{b.specialty ? ` — ${b.specialty}` : ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Service */}
+          <div>
+            <Label>Serviço *</Label>
+            <Select value={form.service_id} onValueChange={(v) => setForm({ ...form, service_id: v })}>
+              <SelectTrigger><SelectValue placeholder="Selecione o serviço" /></SelectTrigger>
+              <SelectContent>
+                {services.filter((s) => s.active !== false).map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name} — {formatCurrency(s.price)} ({s.duration} min)</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Date + Time */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Data *</Label>
+              <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} required />
+            </div>
+            <div>
+              <Label>Horário *</Label>
+              <Input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} required />
+            </div>
+          </div>
+
+          {/* Conflict warning */}
+          {conflict && (
+            <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>Choque de horário! Este barbeiro já tem um atendimento neste horário.</span>
+            </div>
+          )}
+          {!conflict && form.barber_id && form.date && form.time && (
+            <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-500/10 rounded-lg px-3 py-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>Horário disponível!</span>
+            </div>
+          )}
+
+          {/* Coupon */}
+          <div>
+            <Label>Cupom de Desconto</Label>
+            <Input
+              placeholder="Código do cupom"
+              value={form.coupon_code}
+              onChange={(e) => setForm({ ...form, coupon_code: e.target.value.toUpperCase() })}
+            />
+            {form.coupon_code && !selectedCoupon && (
+              <p className="text-xs text-destructive mt-1">Cupom inválido ou expirado</p>
+            )}
+            {selectedCoupon && (
+              <p className="text-xs text-emerald-600 mt-1">
+                Desconto: {selectedCoupon.discount_type === "percentage" ? `${selectedCoupon.discount_value}%` : formatCurrency(selectedCoupon.discount_value)}
+              </p>
+            )}
+          </div>
+
+          {/* Notes */}
+          <div>
+            <Label>Observações</Label>
+            <Textarea
+              placeholder="Alguma preferência ou observação?"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              rows={2}
+            />
+          </div>
+
+          {/* Price summary */}
+          {selectedService && (
+            <div className="bg-muted rounded-lg p-3 text-sm space-y-1">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Serviço</span>
+                <span>{selectedService.name} ({selectedService.duration} min)</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>{formatCurrency(selectedService.price)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-600">
+                  <span>Desconto</span>
+                  <span>-{formatCurrency(discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-bold border-t pt-1">
+                <span>Total</span>
+                <span>{formatCurrency(finalPrice)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button type="submit" disabled={saveMutation.isPending || !form.client_id || !form.service_id || conflict}>
+              {saveMutation.isPending ? "Salvando..." : isEdit ? "Salvar Alterações" : "Agendar"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
