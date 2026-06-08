@@ -1,0 +1,102 @@
+import { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Upload } from "lucide-react";
+
+export default function ProductDialog({ open, onOpenChange, product }) {
+  const queryClient = useQueryClient();
+  const isEditing = !!product;
+
+  const [form, setForm] = useState({ name: "", price: "", stock: 0, description: "", image_url: "", active: true });
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (product) {
+      setForm({ name: product.name || "", price: product.price || "", stock: product.stock ?? 0, description: product.description || "", image_url: product.image_url || "", active: product.active ?? true });
+    } else {
+      setForm({ name: "", price: "", stock: 0, description: "", image_url: "", active: true });
+    }
+  }, [product, open]);
+
+  const mutation = useMutation({
+    mutationFn: (data) =>
+      isEditing
+        ? base44.entities.Product.update(product.id, data)
+        : base44.entities.Product.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      onOpenChange(false);
+    },
+  });
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    setForm((f) => ({ ...f, image_url: file_url }));
+    setUploading(false);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    mutation.mutate({ ...form, price: Number(form.price), stock: Number(form.stock) });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? "Editar Produto" : "Novo Produto"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div>
+            <Label>Nome do Produto *</Label>
+            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required placeholder="Ex: Shampoo Anticaspa" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Preço (R$) *</Label>
+              <Input type="number" step="0.01" min="0" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} required placeholder="0,00" />
+            </div>
+            <div>
+              <Label>Estoque *</Label>
+              <Input type="number" min="0" value={form.stock} onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))} required placeholder="0" />
+            </div>
+          </div>
+          <div>
+            <Label>Descrição</Label>
+            <Textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Descreva o produto..." rows={2} />
+          </div>
+          <div>
+            <Label>Imagem do Produto</Label>
+            <div className="flex items-center gap-3 mt-1">
+              {form.image_url && (
+                <img src={form.image_url} alt="preview" className="w-16 h-16 rounded-lg object-cover border" />
+              )}
+              <label className="cursor-pointer">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {uploading ? "Enviando..." : "Escolher imagem"}
+                </div>
+                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button type="submit" disabled={mutation.isPending || uploading}>
+              {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {isEditing ? "Salvar" : "Criar Produto"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
