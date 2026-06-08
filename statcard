@@ -1,0 +1,36 @@
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+export default function StatCard({ title, value, subtitle, icon: Icon, trend, className }) {
+  return (
+    <Card className={cn(
+      "relative overflow-hidden p-6 border-[#2a2a2a] hover:border-[#C9A84C]/30 transition-all duration-300",
+      "shadow-[0_4px_24px_rgba(0,0,0,0.4)] hover:shadow-[0_4px_24px_rgba(201,168,76,0.12)]",
+      className
+    )}>
+      {/* Top golden accent line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#C9A84C]/50 to-transparent" />
+      
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <p className="text-[10px] font-label font-medium uppercase tracking-[0.15em] text-white/40">{title}</p>
+          <p className="text-3xl font-display font-bold text-[#C9A84C]">{value}</p>
+          {subtitle && <p className="text-xs text-white/40 font-sans">{subtitle}</p>}
+        </div>
+        {Icon && (
+          <div className="w-10 h-10 border border-[#C9A84C]/20 bg-[#C9A84C]/5 flex items-center justify-center">
+            <Icon className="w-5 h-5 text-[#C9A84C]" />
+          </div>
+        )}
+      </div>
+      {trend && (
+        <div className={cn(
+          "mt-3 text-xs font-label font-medium tracking-wide",
+          trend > 0 ? "text-emerald-500" : "text-red-400"
+        )}>
+          {trend > 0 ? "↑" : "↓"} {Math.abs(trend)}% vs mês anterior
+        </div>
+      )}
+    </Card>
+  );
+}
