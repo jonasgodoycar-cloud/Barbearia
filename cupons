@@ -1,0 +1,112 @@
+import { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { base44 } from "@/api/base44Client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+export default function CouponDialog({ open, onOpenChange }) {
+  const [form, setForm] = useState({
+    code: "",
+    discount_type: "percentage",
+    discount_value: "",
+    usage_limit: "",
+    expires_at: "",
+  });
+
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (data) => base44.entities.Coupon.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["coupons"] });
+      onOpenChange(false);
+      setForm({ code: "", discount_type: "percentage", discount_value: "", usage_limit: "", expires_at: "" });
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    mutation.mutate({
+      code: form.code.toUpperCase(),
+      discount_type: form.discount_type,
+      discount_value: Number(form.discount_value),
+      usage_limit: form.usage_limit ? Number(form.usage_limit) : null,
+      expires_at: form.expires_at || null,
+      times_used: 0,
+      active: true,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Novo Cupom</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label>Código *</Label>
+            <Input
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+              placeholder="Ex: BARBER10"
+              className="uppercase"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Tipo de Desconto</Label>
+              <Select value={form.discount_type} onValueChange={(v) => setForm({ ...form, discount_type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percentage">Porcentagem (%)</SelectItem>
+                  <SelectItem value="fixed">Valor Fixo (R$)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Valor do Desconto *</Label>
+              <Input
+                type="number"
+                min="0"
+                value={form.discount_value}
+                onChange={(e) => setForm({ ...form, discount_value: e.target.value })}
+                required
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Limite de Usos</Label>
+              <Input
+                type="number"
+                min="1"
+                value={form.usage_limit}
+                onChange={(e) => setForm({ ...form, usage_limit: e.target.value })}
+                placeholder="Ilimitado"
+              />
+            </div>
+            <div>
+              <Label>Data de Expiração</Label>
+              <Input
+                type="date"
+                value={form.expires_at}
+                onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? "Criando..." : "Criar Cupom"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
