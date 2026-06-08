@@ -1,0 +1,83 @@
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { ShieldCheck, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { useAppContext } from "@/lib/AppContext";
+
+export default function AdminLoginModal({ open, onOpenChange }) {
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [error, setError] = useState("");
+  const { loginAdmin } = useAppContext();
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const ok = loginAdmin(password);
+    if (ok) {
+      setPassword("");
+      setError("");
+      onOpenChange(false);
+    } else {
+      setError("Senha incorreta. Tente novamente.");
+    }
+  };
+
+  const handleClose = () => {
+    setPassword("");
+    setError("");
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-full bg-[#C9A84C]/10 border border-[#C9A84C]/30 flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5 text-[#C9A84C]" />
+            </div>
+            <DialogTitle className="font-display text-lg text-[#C9A84C] uppercase tracking-wide">
+              Acesso Administrador
+            </DialogTitle>
+          </div>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div>
+            <Label className="text-white/70">Senha</Label>
+            <div className="relative mt-1">
+              <Input
+                type={showPw ? "text" : "password"}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                placeholder="Digite a senha do administrador"
+                autoFocus
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(!showPw)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70"
+              >
+                {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded px-3 py-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={handleClose}>Cancelar</Button>
+            <Button type="submit" disabled={!password}>Entrar</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
