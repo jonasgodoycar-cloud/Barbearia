@@ -1,0 +1,33 @@
+{
+  "name": "Loyalty",
+  "type": "object",
+  "properties": {
+    "client_id": {
+      "type": "string",
+      "description": "ID do cliente"
+    },
+    "client_name": {
+      "type": "string",
+      "description": "Nome do cliente"
+    },
+    "cuts": {
+      "type": "number",
+      "default": 0,
+      "description": "N\u00famero de cortes acumulados (0-8)"
+    },
+    "free_cuts_earned": {
+      "type": "number",
+      "default": 0,
+      "description": "Total de cortes gr\u00e1tis j\u00e1 ganhos"
+    },
+    "free_cut_available": {
+      "type": "boolean",
+      "default": false,
+      "description": "Se tem corte gr\u00e1tis dispon\u00edvel"
+    }
+  },
+  "required": [
+    "client_id",
+    "client_name"
+  ]
+}
